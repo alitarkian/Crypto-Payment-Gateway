@@ -10,6 +10,14 @@ pub struct AppConfig {
     pub redis_url: String,
     pub solana_rpc_url: String,
     pub solana_usdc_mint: String,
+    #[serde(default)]
+    pub otlp_endpoint: Option<String>,
+    #[serde(default = "default_shutdown_timeout")]
+    pub shutdown_timeout_secs: u64,
+}
+
+fn default_shutdown_timeout() -> u64 {
+    30
 }
 
 impl AppConfig {

@@ -191,3 +191,15 @@ before release.
 * GET  /api/v1/admin/audit-logs
 * GET  /api/v1/admin/merchants/{id}/audit-logs
 
+## [0.10.0] - Production Readiness - 2026-06-14
+
+### Added
+* Request ID middleware (x-request-id header, propagated to response)
+* API key authentication middleware (x-api-key, merchant validation)
+* Protected routes: wallets, invoices require valid API key
+* Prometheus metrics endpoint GET /metrics
+* OpenTelemetry tracing with OTLP export (optional via OTLP_ENDPOINT env)
+* Graceful shutdown on SIGTERM/Ctrl+C with configurable drain timeout
+* Rate limiting infrastructure (global, per-IP ready for Phase 10)
+* Config: OTLP_ENDPOINT, SHUTDOWN_TIMEOUT_SECS
+

@@ -1,13 +1,14 @@
 mod config;
 mod infrastructure;
+mod middleware;
 mod modules;
+mod observability;
 
 use std::sync::Arc;
-use axum::{ routing::get, Router };
+use axum::{ middleware as axum_middleware, routing::get, Router };
 use std::net::SocketAddr;
 use tokio::time::{ interval, Duration };
 use tracing::{ error, info };
-use tracing_subscriber::{ layer::SubscriberExt, util::SubscriberInitExt, EnvFilter };
 
 use infrastructure::blockchain::rpc_client::SolanaRpcClient;
 use infrastructure::blockchain::transaction_watcher::TransactionWatcher;
@@ -17,6 +18,8 @@ use infrastructure::payment_repository::PostgresPaymentRepository;
 use infrastructure::settlement_repository::PostgresSettlementRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
 use infrastructure::webhook_repository::PostgresWebhookRepository;
+use middleware::auth::AuthState;
+use middleware::request_id::request_id_middleware;
 use modules::admin::audit::AuditLogger;
 use modules::admin::routes::admin_routes;
 use modules::admin::use_cases::AdminUseCase;
@@ -30,16 +33,17 @@ use modules::payment::use_cases::PaymentUseCase;
 use modules::settlement::use_cases::SettlementUseCase;
 use modules::wallet::{ handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase };
 use modules::webhook::use_cases::WebhookUseCase;
+use observability::metrics::{ init_metrics, metrics_router };
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cfg = config::AppConfig::load()?;
 
-    tracing_subscriber
-        ::registry()
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    // ─── Tracing ──────────────────────────────────────────────────────────────
+    observability::tracing::init_tracing("crypto-payment-gateway", cfg.otlp_endpoint.as_deref());
+
+    // ─── Metrics ──────────────────────────────────────────────────────────────
+    init_metrics();
 
     info!(env = %cfg.app_env, "Starting crypto-payment-gateway");
 
@@ -81,12 +85,17 @@ async fn main() -> anyhow::Result<()> {
         audit: audit_logger,
     });
 
+    // ─── Auth State ───────────────────────────────────────────────────────────
+    let auth_state = AuthState {
+        merchant_repo: merchant_repo.clone(),
+    };
+
     // ─── HTTP States ──────────────────────────────────────────────────────────
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
     let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
 
-    // ─── Transaction Watcher ──────────────────────────────────────────────────
+    // ─── Background Workers ───────────────────────────────────────────────────
     let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
     let watcher = TransactionWatcher::new(
         rpc,
@@ -95,11 +104,9 @@ async fn main() -> anyhow::Result<()> {
         payment_use_case,
         cfg.solana_usdc_mint.clone()
     );
-
     tokio::spawn(async move { watcher.run().await });
     info!("Transaction watcher spawned");
 
-    // ─── Webhook Dispatcher ───────────────────────────────────────────────────
     let webhook_dispatcher = webhook_use_case.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(15));
@@ -112,7 +119,6 @@ async fn main() -> anyhow::Result<()> {
     });
     info!("Webhook dispatcher spawned");
 
-    // ─── Settlement Processor ─────────────────────────────────────────────────
     let settlement_processor = settlement_use_case.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(60));
@@ -127,28 +133,70 @@ async fn main() -> anyhow::Result<()> {
     });
     info!("Settlement processor spawned");
 
-    // ─── HTTP Server ──────────────────────────────────────────────────────────
+    // ─── Protected API routes (require x-api-key) ─────────────────────────────
+    let protected = Router::new()
+        .merge(wallet_routes(wallet_state))
+        .merge(invoice_routes(invoice_state))
+        .layer(
+            axum_middleware::from_fn_with_state(auth_state.clone(), middleware::auth::api_key_auth)
+        );
+
+    // ─── Router ───────────────────────────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(health_handler))
         .merge(merchant_routes(merchant_state))
-        .merge(wallet_routes(wallet_state))
-        .merge(invoice_routes(invoice_state))
-        .merge(admin_routes(admin_use_case));
+        .merge(protected)
+        .merge(admin_routes(admin_use_case))
+        .merge(metrics_router())
+        .layer(axum_middleware::from_fn(request_id_middleware));
 
+    // ─── Graceful Shutdown ────────────────────────────────────────────────────
     let addr: SocketAddr = format!("{}:{}", cfg.app_host, cfg.app_port).parse()?;
     info!(%addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
-    axum::serve(listener, app).await?;
+    let shutdown_timeout = Duration::from_secs(cfg.shutdown_timeout_secs);
+
+    axum::serve(listener, app).with_graceful_shutdown(shutdown_signal(shutdown_timeout)).await?;
+
+    observability::tracing::shutdown_tracer();
+    info!("Server shutdown complete");
 
     Ok(())
+}
+
+async fn shutdown_signal(timeout: Duration) {
+    use tokio::signal;
+
+    let ctrl_c = async {
+        signal::ctrl_c().await.expect("Failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix
+            ::signal(signal::unix::SignalKind::terminate())
+            .expect("Failed to install SIGTERM handler")
+            .recv().await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => info!("Received Ctrl+C"),
+        _ = terminate => info!("Received SIGTERM"),
+    }
+
+    info!(timeout_secs = timeout.as_secs(), "Shutdown signal received — draining connections");
+    tokio::time::sleep(timeout).await;
 }
 
 async fn health_handler() -> axum::Json<serde_json::Value> {
     axum::Json(
         serde_json::json!({
-            "status": "ok",
-            "version": env!("CARGO_PKG_VERSION")
-        })
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION")
+    })
     )
 }
