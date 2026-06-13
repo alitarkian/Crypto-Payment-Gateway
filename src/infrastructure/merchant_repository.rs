@@ -22,72 +22,91 @@ impl PostgresMerchantRepository {
 #[async_trait]
 impl MerchantRepository for PostgresMerchantRepository {
     async fn save(&self, merchant: &Merchant) -> Result<(), MerchantError> {
-        sqlx::query!(
-            r#"
-            INSERT INTO merchants (id, name, email, api_key, is_active, created_at, updated_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            "#,
-            merchant.id,
-            merchant.name,
-            merchant.email,
-            merchant.api_key,
-            merchant.is_active,
-            merchant.created_at,
-            merchant.updated_at,
-        )
-        .execute(&self.pool)
-        .await
-        .map_err(|e| match e {
-            sqlx::Error::Database(db_err) if db_err.constraint() == Some("merchants_email_key") => {
-                MerchantError::EmailAlreadyExists
-            }
-            _ => MerchantError::DatabaseError(e.to_string()),
-        })?;
+        sqlx
+            ::query(
+                r#"INSERT INTO merchants (id, name, email, api_key, is_active, created_at, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)"#
+            )
+            .bind(merchant.id)
+            .bind(&merchant.name)
+            .bind(&merchant.email)
+            .bind(&merchant.api_key)
+            .bind(merchant.is_active)
+            .bind(merchant.created_at)
+            .bind(merchant.updated_at)
+            .execute(&self.pool).await
+            .map_err(|e| {
+                match e {
+                    sqlx::Error::Database(db_err) if
+                        db_err.constraint() == Some("merchants_email_key")
+                    => {
+                        MerchantError::EmailAlreadyExists
+                    }
+                    _ => MerchantError::DatabaseError(e.to_string()),
+                }
+            })?;
 
         Ok(())
     }
 
     async fn find_by_id(&self, id: Uuid) -> Result<Merchant, MerchantError> {
-        sqlx::query_as!(
-            MerchantRow,
-            r#"SELECT id, name, email, api_key, is_active, created_at, updated_at
-               FROM merchants WHERE id = $1"#,
-            id
+        sqlx::query_as::<_, MerchantRow>(
+            "SELECT id, name, email, api_key, is_active, created_at, updated_at
+             FROM merchants WHERE id = $1"
         )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| MerchantError::DatabaseError(e.to_string()))?
-        .map(MerchantRow::into_domain)
-        .ok_or(MerchantError::NotFound)
+            .bind(id)
+            .fetch_optional(&self.pool).await
+            .map_err(|e| MerchantError::DatabaseError(e.to_string()))?
+            .map(MerchantRow::into_domain)
+            .ok_or(MerchantError::NotFound)
     }
 
     async fn find_by_email(&self, email: &str) -> Result<Option<Merchant>, MerchantError> {
-        sqlx::query_as!(
-            MerchantRow,
-            r#"SELECT id, name, email, api_key, is_active, created_at, updated_at
-               FROM merchants WHERE email = $1"#,
-            email
+        sqlx::query_as::<_, MerchantRow>(
+            "SELECT id, name, email, api_key, is_active, created_at, updated_at
+             FROM merchants WHERE email = $1"
         )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| MerchantError::DatabaseError(e.to_string()))
-        .map(|opt| opt.map(MerchantRow::into_domain))
+            .bind(email)
+            .fetch_optional(&self.pool).await
+            .map_err(|e| MerchantError::DatabaseError(e.to_string()))
+            .map(|opt| opt.map(MerchantRow::into_domain))
     }
 
     async fn find_by_api_key(&self, api_key: &str) -> Result<Option<Merchant>, MerchantError> {
-        sqlx::query_as!(
-            MerchantRow,
-            r#"SELECT id, name, email, api_key, is_active, created_at, updated_at
-               FROM merchants WHERE api_key = $1"#,
-            api_key
+        sqlx::query_as::<_, MerchantRow>(
+            "SELECT id, name, email, api_key, is_active, created_at, updated_at
+             FROM merchants WHERE api_key = $1"
         )
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| MerchantError::DatabaseError(e.to_string()))
-        .map(|opt| opt.map(MerchantRow::into_domain))
+            .bind(api_key)
+            .fetch_optional(&self.pool).await
+            .map_err(|e| MerchantError::DatabaseError(e.to_string()))
+            .map(|opt| opt.map(MerchantRow::into_domain))
+    }
+
+    async fn find_all(&self) -> Result<Vec<Merchant>, MerchantError> {
+        sqlx::query_as::<_, MerchantRow>(
+            "SELECT id, name, email, api_key, is_active, created_at, updated_at
+             FROM merchants ORDER BY created_at DESC"
+        )
+            .fetch_all(&self.pool).await
+            .map_err(|e| MerchantError::DatabaseError(e.to_string()))
+            .map(|rows| rows.into_iter().map(MerchantRow::into_domain).collect())
+    }
+
+    async fn update(&self, merchant: &Merchant) -> Result<(), MerchantError> {
+        sqlx
+            ::query("UPDATE merchants SET name = $1, is_active = $2, updated_at = $3 WHERE id = $4")
+            .bind(&merchant.name)
+            .bind(merchant.is_active)
+            .bind(merchant.updated_at)
+            .bind(merchant.id)
+            .execute(&self.pool).await
+            .map_err(|e| MerchantError::DatabaseError(e.to_string()))?;
+        Ok(())
     }
 }
 
+#[derive(sqlx::FromRow)]
 struct MerchantRow {
     id: Uuid,
     name: String,

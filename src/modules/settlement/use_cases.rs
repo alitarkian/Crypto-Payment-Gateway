@@ -107,7 +107,7 @@ impl SettlementUseCase {
         Ok(processed)
     }
 
-    /// بستن batch روز قبل و آماده کردن برای پرداخت
+    #[allow(dead_code)]
     pub async fn close_daily_batches(&self) -> Result<usize, SettlementError> {
         // در این فاز فقط open batch های merchant ها رو می‌بندیم
         // on-chain transfer در فاز 9 اضافه می‌شه
@@ -122,6 +122,7 @@ impl SettlementUseCase {
         Ok(closed)
     }
 
+    #[allow(dead_code)]
     pub async fn get_merchant_settlements(
         &self,
         merchant_id: Uuid
@@ -129,6 +130,7 @@ impl SettlementUseCase {
         self.repo.find_settlements_by_merchant(merchant_id).await
     }
 
+    #[allow(dead_code)]
     pub async fn get_merchant_batches(
         &self,
         merchant_id: Uuid

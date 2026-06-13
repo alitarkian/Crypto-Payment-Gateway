@@ -1,8 +1,8 @@
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 use uuid::Uuid;
 use super::errors::MerchantError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Merchant {
     pub id: Uuid,
     pub name: String,
@@ -34,9 +34,9 @@ impl Merchant {
         })
     }
 
-    pub fn is_active(&self) -> bool {
-        self.is_active
-    }
+    // pub fn is_active(&self) -> bool {
+    //     self.is_active
+    // }
 }
 
 fn generate_api_key() -> String {

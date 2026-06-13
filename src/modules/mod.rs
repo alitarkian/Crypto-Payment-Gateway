@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod invoice;
 pub mod merchant;
 pub mod payment;

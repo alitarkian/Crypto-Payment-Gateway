@@ -1,8 +1,8 @@
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::{ DateTime, Utc };
+// use serde::{ Deserialize, Serialize };
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum WebhookEventType {
     InvoicePaid,
     InvoiceExpired,
@@ -28,7 +28,7 @@ impl WebhookEventType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum WebhookEventStatus {
     Pending,
     Delivered,
@@ -53,7 +53,7 @@ impl WebhookEventStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Webhook {
     pub id: Uuid,
     pub merchant_id: Uuid,
@@ -79,14 +79,14 @@ impl Webhook {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebhookPayload {
-    pub event_type: String,
-    pub merchant_id: String,
-    pub data: serde_json::Value,
-}
+// #[derive(Debug, Clone, Serialize, Deserialize)]
+// pub struct WebhookPayload {
+//     pub event_type: String,
+//     pub merchant_id: String,
+//     pub data: serde_json::Value,
+// }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct WebhookEvent {
     pub id: Uuid,
     pub merchant_id: Uuid,
@@ -101,7 +101,7 @@ impl WebhookEvent {
     pub fn new(
         merchant_id: Uuid,
         event_type: WebhookEventType,
-        payload: serde_json::Value,
+        payload: serde_json::Value
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -164,7 +164,9 @@ impl WebhookDelivery {
             3 => 30,
             4 => 120,
             5 => 480,
-            _ => return None,
+            _ => {
+                return None;
+            }
         };
         Some(Utc::now() + chrono::Duration::minutes(minutes))
     }

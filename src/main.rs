@@ -17,6 +17,9 @@ use infrastructure::payment_repository::PostgresPaymentRepository;
 use infrastructure::settlement_repository::PostgresSettlementRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
 use infrastructure::webhook_repository::PostgresWebhookRepository;
+use modules::admin::audit::AuditLogger;
+use modules::admin::routes::admin_routes;
+use modules::admin::use_cases::AdminUseCase;
 use modules::invoice::{ handlers::InvoiceState, routes::invoice_routes, use_cases::InvoiceUseCase };
 use modules::merchant::{
     handlers::MerchantState,
@@ -51,19 +54,32 @@ async fn main() -> anyhow::Result<()> {
     let settlement_repo = Arc::new(PostgresSettlementRepository::new(db.clone()));
 
     // ─── Use Cases ────────────────────────────────────────────────────────────
-    let merchant_use_case = MerchantUseCase::new(merchant_repo);
+    let merchant_use_case = MerchantUseCase::new(merchant_repo.clone());
     let wallet_use_case = WalletUseCase::new(wallet_repo.clone());
     let invoice_use_case = InvoiceUseCase::new(invoice_repo.clone());
-    let webhook_use_case = Arc::new(WebhookUseCase::new(webhook_repo));
-    let settlement_use_case = Arc::new(SettlementUseCase::new(settlement_repo));
+    let webhook_use_case = Arc::new(WebhookUseCase::new(webhook_repo.clone()));
+    let settlement_use_case = Arc::new(SettlementUseCase::new(settlement_repo.clone()));
     let payment_use_case = Arc::new(
         PaymentUseCase::new(
-            payment_repo,
+            payment_repo.clone(),
             invoice_repo.clone(),
             webhook_use_case.clone(),
             settlement_use_case.clone()
         )
     );
+
+    // ─── Admin ────────────────────────────────────────────────────────────────
+    let audit_logger = AuditLogger::new(db.clone());
+    let admin_use_case = Arc::new(AdminUseCase {
+        merchant_repo: merchant_repo.clone(),
+        invoice_repo: invoice_repo.clone(),
+        payment_repo: payment_repo.clone(),
+        settlement_repo: settlement_repo.clone(),
+        settlement_use_case: settlement_use_case.clone(),
+        webhook_repo: webhook_repo.clone(),
+        webhook_use_case: webhook_use_case.clone(),
+        audit: audit_logger,
+    });
 
     // ─── HTTP States ──────────────────────────────────────────────────────────
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
@@ -116,7 +132,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_handler))
         .merge(merchant_routes(merchant_state))
         .merge(wallet_routes(wallet_state))
-        .merge(invoice_routes(invoice_state));
+        .merge(invoice_routes(invoice_state))
+        .merge(admin_routes(admin_use_case));
 
     let addr: SocketAddr = format!("{}:{}", cfg.app_host, cfg.app_port).parse()?;
     info!(%addr, "Server listening");
@@ -130,8 +147,8 @@ async fn main() -> anyhow::Result<()> {
 async fn health_handler() -> axum::Json<serde_json::Value> {
     axum::Json(
         serde_json::json!({
-        "status": "ok",
-        "version": env!("CARGO_PKG_VERSION")
-    })
+            "status": "ok",
+            "version": env!("CARGO_PKG_VERSION")
+        })
     )
 }

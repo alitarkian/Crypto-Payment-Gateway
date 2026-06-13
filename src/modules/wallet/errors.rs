@@ -5,6 +5,7 @@ pub enum WalletError {
     #[error("Wallet not found")]
     NotFound,
 
+    #[allow(dead_code)]
     #[error("Merchant not found")]
     MerchantNotFound,
 
@@ -14,6 +15,7 @@ pub enum WalletError {
     #[error("Invalid blockchain address")]
     InvalidAddress,
 
+    #[allow(dead_code)]
     #[error("Wallet is inactive")]
     InactiveWallet,
 

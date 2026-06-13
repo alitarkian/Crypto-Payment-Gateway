@@ -1,9 +1,9 @@
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 use rust_decimal::Decimal;
 use uuid::Uuid;
 use super::errors::InvoiceError;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum InvoiceStatus {
     Draft,
     Pending,
@@ -35,7 +35,7 @@ impl InvoiceStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Invoice {
     pub id: Uuid,
     pub merchant_id: Uuid,
@@ -57,7 +57,7 @@ impl Invoice {
         wallet_id: Uuid,
         amount: Decimal,
         description: Option<String>,
-        expires_at: DateTime<Utc>,
+        expires_at: DateTime<Utc>
     ) -> Result<Self, InvoiceError> {
         if amount <= Decimal::ZERO {
             return Err(InvoiceError::InvalidAmount);
@@ -101,6 +101,7 @@ impl Invoice {
         }
     }
 
+    #[allow(dead_code)]
     pub fn mark_expired(&mut self) -> Result<(), InvoiceError> {
         match self.status {
             InvoiceStatus::Paid => Err(InvoiceError::AlreadyPaid),

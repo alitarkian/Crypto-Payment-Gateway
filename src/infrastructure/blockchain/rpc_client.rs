@@ -1,5 +1,5 @@
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::{ Deserialize, Serialize };
 use tracing::debug;
 
 #[derive(Debug, Clone)]
@@ -16,26 +16,31 @@ pub struct RpcResponse<T> {
 #[derive(Debug, Deserialize)]
 pub struct SignaturesResult {
     pub signature: String,
+    #[allow(dead_code)]
     pub slot: u64,
     pub err: Option<serde_json::Value>,
     #[serde(rename = "blockTime")]
+    #[allow(dead_code)]
     pub block_time: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionResult {
+    #[allow(dead_code)]
     pub transaction: TransactionData,
     pub meta: Option<TransactionMeta>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionData {
+    #[allow(dead_code)]
     pub message: TransactionMessage,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct TransactionMessage {
     #[serde(rename = "accountKeys")]
+    #[allow(dead_code)]
     pub account_keys: Vec<String>,
 }
 
@@ -53,6 +58,7 @@ pub struct TokenBalance {
     #[serde(rename = "accountIndex")]
     pub account_index: u64,
     pub mint: String,
+    #[allow(dead_code)]
     pub owner: Option<String>,
     #[serde(rename = "uiTokenAmount")]
     pub ui_token_amount: UiTokenAmount,
@@ -74,16 +80,13 @@ struct RpcRequest {
 
 impl SolanaRpcClient {
     pub fn new(url: String) -> Self {
-        Self {
-            client: Client::new(),
-            url,
-        }
+        Self { client: Client::new(), url }
     }
 
     pub async fn get_signatures_for_address(
         &self,
         address: &str,
-        limit: u8,
+        limit: u8
     ) -> anyhow::Result<Vec<SignaturesResult>> {
         let request = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -97,21 +100,18 @@ impl SolanaRpcClient {
 
         debug!(address = %address, "Fetching signatures");
 
-        let response: RpcResponse<Vec<SignaturesResult>> = self
-            .client
+        let response: RpcResponse<Vec<SignaturesResult>> = self.client
             .post(&self.url)
             .json(&request)
-            .send()
-            .await?
-            .json()
-            .await?;
+            .send().await?
+            .json().await?;
 
         Ok(response.result)
     }
 
     pub async fn get_transaction(
         &self,
-        signature: &str,
+        signature: &str
     ) -> anyhow::Result<Option<TransactionResult>> {
         let request = RpcRequest {
             jsonrpc: "2.0".to_string(),
@@ -119,20 +119,21 @@ impl SolanaRpcClient {
             method: "getTransaction".to_string(),
             params: serde_json::json!([
                 signature,
-                { "encoding": "jsonParsed", "commitment": "confirmed", "maxSupportedTransactionVersion": 0 }
+                {
+                    "encoding": "jsonParsed",
+                    "commitment": "confirmed",
+                    "maxSupportedTransactionVersion": 0
+                }
             ]),
         };
 
         debug!(signature = %signature, "Fetching transaction");
 
-        let response: RpcResponse<Option<TransactionResult>> = self
-            .client
+        let response: RpcResponse<Option<TransactionResult>> = self.client
             .post(&self.url)
             .json(&request)
-            .send()
-            .await?
-            .json()
-            .await?;
+            .send().await?
+            .json().await?;
 
         Ok(response.result)
     }

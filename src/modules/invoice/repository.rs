@@ -9,6 +9,7 @@ pub trait InvoiceRepository: Send + Sync {
     async fn update(&self, invoice: &Invoice) -> Result<(), InvoiceError>;
     async fn find_by_id(&self, id: Uuid) -> Result<Invoice, InvoiceError>;
     async fn find_by_merchant_id(&self, merchant_id: Uuid) -> Result<Vec<Invoice>, InvoiceError>;
+    #[allow(dead_code)]
     async fn find_pending_expired(&self) -> Result<Vec<Invoice>, InvoiceError>;
     async fn find_pending_active(&self) -> Result<Vec<Invoice>, InvoiceError>;
 }

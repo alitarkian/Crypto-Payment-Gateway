@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 use rust_decimal::Decimal;
 use uuid::Uuid;
 use tracing::info;
@@ -31,7 +31,7 @@ impl InvoiceUseCase {
             cmd.wallet_id,
             cmd.amount,
             cmd.description,
-            cmd.expires_at,
+            cmd.expires_at
         )?;
 
         self.repo.save(&invoice).await?;
@@ -49,6 +49,7 @@ impl InvoiceUseCase {
         self.repo.find_by_merchant_id(merchant_id).await
     }
 
+    #[allow(dead_code)]
     pub async fn expire_pending(&self) -> Result<usize, InvoiceError> {
         let expired = self.repo.find_pending_expired().await?;
         let count = expired.len();

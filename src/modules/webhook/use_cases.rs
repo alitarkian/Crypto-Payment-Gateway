@@ -1,13 +1,14 @@
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{ error, info, warn };
 use uuid::Uuid;
 
-use super::domain::{Webhook, WebhookDelivery, WebhookEvent, WebhookEventType};
+use super::domain::{ Webhook, WebhookDelivery, WebhookEvent, WebhookEventType };
 use super::errors::WebhookError;
 use super::repository::WebhookRepository;
 
 const MAX_ATTEMPTS: i64 = 5;
 
+#[allow(dead_code)]
 pub struct RegisterWebhook {
     pub merchant_id: Uuid,
     pub url: String,
@@ -29,13 +30,15 @@ impl WebhookUseCase {
     pub fn new(repo: Arc<dyn WebhookRepository>) -> Self {
         Self {
             repo,
-            http: reqwest::Client::builder()
+            http: reqwest::Client
+                ::builder()
                 .timeout(std::time::Duration::from_secs(10))
                 .build()
                 .expect("Failed to build HTTP client"),
         }
     }
 
+    #[allow(dead_code)]
     pub async fn register(&self, cmd: RegisterWebhook) -> Result<Webhook, WebhookError> {
         let url = cmd.url.trim().to_string();
         if !url.starts_with("https://") && !url.starts_with("http://") {
@@ -54,7 +57,10 @@ impl WebhookUseCase {
         Ok(webhook)
     }
 
-    pub async fn create_event(&self, cmd: CreateWebhookEvent) -> Result<WebhookEvent, WebhookError> {
+    pub async fn create_event(
+        &self,
+        cmd: CreateWebhookEvent
+    ) -> Result<WebhookEvent, WebhookError> {
         let event = WebhookEvent::new(cmd.merchant_id, cmd.event_type, cmd.payload);
         self.repo.save_event(&event).await?;
 
@@ -74,7 +80,10 @@ impl WebhookUseCase {
 
         for mut event in events {
             let webhooks = self.repo.find_webhooks_by_merchant(event.merchant_id).await?;
-            let active: Vec<_> = webhooks.into_iter().filter(|w| w.is_active).collect();
+            let active: Vec<_> = webhooks
+                .into_iter()
+                .filter(|w| w.is_active)
+                .collect();
 
             if active.is_empty() {
                 // No webhooks — mark failed so we don't loop forever
@@ -129,7 +138,7 @@ impl WebhookUseCase {
 
             if all_ok {
                 event.mark_delivered();
-            } else if attempt >= MAX_ATTEMPTS as i32 {
+            } else if attempt >= (MAX_ATTEMPTS as i32) {
                 event.mark_failed();
             }
 
@@ -139,28 +148,24 @@ impl WebhookUseCase {
         Ok(())
     }
 
-    async fn deliver(
-        &self,
-        event: &WebhookEvent,
-        webhook: &Webhook,
-    ) -> Result<i32, WebhookError> {
+    async fn deliver(&self, event: &WebhookEvent, webhook: &Webhook) -> Result<i32, WebhookError> {
         let signature = self.sign(&webhook.secret, &event.payload.to_string());
 
-        let response = self
-            .http
+        let response = self.http
             .post(&webhook.url)
             .header("Content-Type", "application/json")
             .header("X-Webhook-Signature", signature)
             .header("X-Webhook-Event", event.event_type.as_str())
-            .json(&serde_json::json!({
+            .json(
+                &serde_json::json!({
                 "event_id": event.id,
                 "event_type": event.event_type.as_str(),
                 "merchant_id": event.merchant_id,
                 "payload": event.payload,
                 "created_at": event.created_at,
-            }))
-            .send()
-            .await
+            })
+            )
+            .send().await
             .map_err(|e| WebhookError::DeliveryFailed(e.to_string()))?;
 
         let status = response.status().as_u16() as i32;
@@ -173,13 +178,14 @@ impl WebhookUseCase {
     }
 
     fn sign(&self, secret: &str, payload: &str) -> String {
-        use hmac::{Hmac, Mac};
+        use hmac::{ Hmac, Mac };
         use sha2::Sha256;
 
         type HmacSha256 = Hmac<Sha256>;
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC can take key of any size");
+        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).expect(
+            "HMAC can take key of any size"
+        );
         mac.update(payload.as_bytes());
         hex::encode(mac.finalize().into_bytes())
     }

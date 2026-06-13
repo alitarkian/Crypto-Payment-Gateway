@@ -1,10 +1,10 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{ DateTime, NaiveDate, Utc };
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 pub const PLATFORM_FEE_RATE: Decimal = Decimal::from_parts(100, 0, 0, false, 4); // 0.0100 = 1%
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum SettlementStatus {
     Pending,
     Processing,
@@ -35,7 +35,7 @@ impl SettlementStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum BatchStatus {
     Open,
     Closed,
@@ -66,7 +66,7 @@ impl BatchStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Settlement {
     pub id: Uuid,
     pub merchant_id: Uuid,
@@ -91,7 +91,7 @@ impl Settlement {
         invoice_id: Uuid,
         payment_id: Uuid,
         gross_amount: Decimal,
-        fee_rate: Decimal,
+        fee_rate: Decimal
     ) -> Self {
         let fee_amount = (gross_amount * fee_rate).round_dp(8);
         let net_amount = gross_amount - fee_amount;
@@ -127,19 +127,21 @@ impl Settlement {
         self.updated_at = Utc::now();
     }
 
+    #[allow(dead_code)]
     pub fn mark_paid(&mut self) {
         self.status = SettlementStatus::Paid;
         self.settled_at = Some(Utc::now());
         self.updated_at = Utc::now();
     }
 
+    #[allow(dead_code)]
     pub fn mark_failed(&mut self) {
         self.status = SettlementStatus::Failed;
         self.updated_at = Utc::now();
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct SettlementBatch {
     pub id: Uuid,
     pub merchant_id: Uuid,
@@ -184,17 +186,20 @@ impl SettlementBatch {
         self.updated_at = Utc::now();
     }
 
+    #[allow(dead_code)]
     pub fn close(&mut self) {
         self.status = BatchStatus::Closed;
         self.updated_at = Utc::now();
     }
 
+    #[allow(dead_code)]
     pub fn mark_completed(&mut self) {
         self.status = BatchStatus::Completed;
         self.completed_at = Some(Utc::now());
         self.updated_at = Utc::now();
     }
 
+    #[allow(dead_code)]
     pub fn mark_failed(&mut self) {
         self.status = BatchStatus::Failed;
         self.updated_at = Utc::now();

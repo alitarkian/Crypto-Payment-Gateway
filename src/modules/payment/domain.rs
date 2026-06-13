@@ -1,8 +1,8 @@
-use chrono::{DateTime, Utc};
+use chrono::{ DateTime, Utc };
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub enum PaymentStatus {
     Detected,
     Confirmed,
@@ -27,7 +27,7 @@ impl PaymentStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct Payment {
     pub id: Uuid,
     pub invoice_id: Uuid,
@@ -50,7 +50,7 @@ impl Payment {
         wallet_id: Uuid,
         merchant_id: Uuid,
         signature: String,
-        amount: Decimal,
+        amount: Decimal
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -70,9 +70,9 @@ impl Payment {
         }
     }
 
-    pub fn confirm(&mut self) {
-        self.status = PaymentStatus::Confirmed;
-        self.confirmed_at = Some(Utc::now());
-        self.updated_at = Utc::now();
-    }
+    // pub fn confirm(&mut self) {
+    //     self.status = PaymentStatus::Confirmed;
+    //     self.confirmed_at = Some(Utc::now());
+    //     self.updated_at = Utc::now();
+    // }
 }

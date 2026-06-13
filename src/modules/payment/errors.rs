@@ -2,6 +2,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PaymentError {
+    #[allow(dead_code)]
     #[error("Payment not found")]
     NotFound,
 
@@ -14,12 +15,10 @@ pub enum PaymentError {
     #[error("Duplicate transaction signature")]
     DuplicateSignature,
 
-    #[error("Amount mismatch: expected {expected}, got {received}")]
-    AmountMismatch {
+    #[error("Amount mismatch: expected {expected}, got {received}")] AmountMismatch {
         expected: String,
         received: String,
     },
 
-    #[error("Database error: {0}")]
-    DatabaseError(String),
+    #[error("Database error: {0}")] DatabaseError(String),
 }
