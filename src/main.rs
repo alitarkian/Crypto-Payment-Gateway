@@ -8,6 +8,8 @@ use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use infrastructure::blockchain::rpc_client::SolanaRpcClient;
+use infrastructure::blockchain::transaction_watcher::TransactionWatcher;
 use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
@@ -24,21 +26,35 @@ async fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!(env = %cfg.app.env, "Starting crypto-payment-gateway");
+    info!(env = %cfg.app_env, "Starting crypto-payment-gateway");
 
-    let db = infrastructure::database::connect(&cfg.database.url).await?;
+    let db = infrastructure::database::connect(&cfg.database_url).await?;
 
     let merchant_repo = Arc::new(PostgresMerchantRepository::new(db.clone()));
     let merchant_use_case = MerchantUseCase::new(merchant_repo);
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
 
     let wallet_repo = Arc::new(PostgresWalletRepository::new(db.clone()));
-    let wallet_use_case = WalletUseCase::new(wallet_repo);
+    let wallet_use_case = WalletUseCase::new(wallet_repo.clone());
     let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
 
     let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
-    let invoice_use_case = InvoiceUseCase::new(invoice_repo);
+    let invoice_use_case = InvoiceUseCase::new(invoice_repo.clone());
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
+
+    let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
+    let watcher = TransactionWatcher::new(
+        rpc,
+        invoice_repo.clone(),
+        wallet_repo.clone(),
+        cfg.solana_usdc_mint.clone(),
+    );
+
+    tokio::spawn(async move {
+        watcher.run().await;
+    });
+
+    info!("Transaction watcher spawned");
 
     let app = Router::new()
         .route("/health", get(health_handler))
@@ -46,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .merge(wallet_routes(wallet_state))
         .merge(invoice_routes(invoice_state));
 
-    let addr: SocketAddr = format!("{}:{}", cfg.app.host, cfg.app.port).parse()?;
+    let addr: SocketAddr = format!("{}:{}", cfg.app_host, cfg.app_port).parse()?;
 
     info!(%addr, "Server listening");
 

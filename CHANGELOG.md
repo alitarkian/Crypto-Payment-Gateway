@@ -125,3 +125,14 @@ before release.
 * GET /api/v1/merchants/{merchant_id}/invoices endpoint
 * invoices table migration with invoice_status enum
 
+## [0.5.0] - Blockchain Monitoring - 2026-06-13
+
+### Added
+* SolanaRpcClient (JSON-RPC over HTTP)
+* getSignaturesForAddress integration
+* getTransaction integration  
+* TransactionWatcher background task (10s interval)
+* USDC token balance change detection
+* Solana devnet configuration
+* SOLANA_RPC_URL and SOLANA_USDC_MINT env vars
+

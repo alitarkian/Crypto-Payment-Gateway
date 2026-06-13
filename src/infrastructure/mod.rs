@@ -1,3 +1,4 @@
+pub mod blockchain;
 pub mod database;
 pub mod invoice_repository;
 pub mod merchant_repository;
