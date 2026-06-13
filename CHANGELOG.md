@@ -172,3 +172,22 @@ before release.
 * Background settlement processor worker (60s interval)
 * Exponential batch processing — ready for Phase 9 on-chain payout
 
+## [0.9.0] - Admin Platform - 2026-06-14
+
+### Added
+* audit_logs table with audit_action enum and indexes
+* AuditLogger — async fire-and-forget audit trail
+* AdminUseCase — merchant activation, invoice/payment/settlement/webhook oversight
+* GET  /api/v1/admin/merchants
+* GET  /api/v1/admin/merchants/{id}
+* PUT  /api/v1/admin/merchants/{id}/activate
+* PUT  /api/v1/admin/merchants/{id}/deactivate
+* GET  /api/v1/admin/merchants/{id}/invoices
+* GET  /api/v1/admin/merchants/{id}/payments
+* GET  /api/v1/admin/merchants/{id}/settlements
+* POST /api/v1/admin/settlements/trigger
+* GET  /api/v1/admin/webhooks/pending
+* POST /api/v1/admin/webhooks/retry
+* GET  /api/v1/admin/audit-logs
+* GET  /api/v1/admin/merchants/{id}/audit-logs
+
