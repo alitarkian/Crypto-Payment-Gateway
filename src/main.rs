@@ -9,11 +9,9 @@ use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use infrastructure::merchant_repository::PostgresMerchantRepository;
-use modules::merchant::{
-    handlers::MerchantState,
-    routes::merchant_routes,
-    use_cases::MerchantUseCase,
-};
+use infrastructure::wallet_repository::PostgresWalletRepository;
+use modules::merchant::{handlers::MerchantState, routes::merchant_routes, use_cases::MerchantUseCase};
+use modules::wallet::{handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,13 +26,18 @@ async fn main() -> anyhow::Result<()> {
 
     let db = infrastructure::database::connect(&cfg.database.url).await?;
 
-    let merchant_repo = Arc::new(PostgresMerchantRepository::new(db));
+    let merchant_repo = Arc::new(PostgresMerchantRepository::new(db.clone()));
     let merchant_use_case = MerchantUseCase::new(merchant_repo);
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
 
+    let wallet_repo = Arc::new(PostgresWalletRepository::new(db.clone()));
+    let wallet_use_case = WalletUseCase::new(wallet_repo);
+    let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
+
     let app = Router::new()
         .route("/health", get(health_handler))
-        .merge(merchant_routes(merchant_state));
+        .merge(merchant_routes(merchant_state))
+        .merge(wallet_routes(wallet_state));
 
     let addr: SocketAddr = format!("{}:{}", cfg.app.host, cfg.app.port).parse()?;
 

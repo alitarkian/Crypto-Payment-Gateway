@@ -95,3 +95,18 @@ before release.
 * POST /api/v1/merchants endpoint
 * GET /api/v1/merchants/{id} endpoint
 * merchants table migration
+
+## [0.3.0] - Wallet Module - 2026-06-13
+
+### Added
+* Wallet domain entity (Blockchain, Asset enums)
+* WalletRepository trait
+* PostgresWalletRepository (SQLx implementation)
+* CreateWallet use case with duplicate address check
+* GetWallet use case
+* ListMerchantWallets use case
+* POST /api/v1/wallets endpoint
+* GET /api/v1/wallets/{id} endpoint
+* GET /api/v1/merchants/{merchant_id}/wallets endpoint
+* wallets table migration with merchant_id foreign key
+
