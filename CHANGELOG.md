@@ -146,3 +146,16 @@ before release.
 * payments table migration with payment_status enum
 * TransactionWatcher wired to PaymentUseCase — invoices auto-close on payment detection
 
+## [0.7.0] - Webhook System - 2026-06-14
+
+### Added
+* webhooks table — merchant endpoint registration
+* webhook_events table — event queue with status machine
+* webhook_deliveries table — delivery history + retry tracking
+* WebhookUseCase: register, create_event, dispatch_pending
+* PostgresWebhookRepository
+* HMAC-SHA256 request signing (X-Webhook-Signature header)
+* Exponential backoff retry (1m, 5m, 30m, 2h, 8h) — max 5 attempts
+* Background webhook dispatcher worker (15s interval)
+* PaymentUseCase emits invoice.paid webhook event on success
+
