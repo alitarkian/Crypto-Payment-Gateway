@@ -110,3 +110,18 @@ before release.
 * GET /api/v1/merchants/{merchant_id}/wallets endpoint
 * wallets table migration with merchant_id foreign key
 
+## [0.4.0] - Invoice Module - 2026-06-13
+
+### Added
+* Invoice domain entity with status machine (Pending, Paid, Expired, Cancelled)
+* InvoiceRepository trait
+* PostgresInvoiceRepository (SQLx implementation)
+* CreateInvoice use case with amount and expiration validation
+* GetInvoice use case
+* ListMerchantInvoices use case
+* ExpirePending use case
+* POST /api/v1/invoices endpoint
+* GET /api/v1/invoices/{id} endpoint
+* GET /api/v1/merchants/{merchant_id}/invoices endpoint
+* invoices table migration with invoice_status enum
+

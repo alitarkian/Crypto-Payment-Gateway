@@ -8,8 +8,10 @@ use std::net::SocketAddr;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
+use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
+use modules::invoice::{handlers::InvoiceState, routes::invoice_routes, use_cases::InvoiceUseCase};
 use modules::merchant::{handlers::MerchantState, routes::merchant_routes, use_cases::MerchantUseCase};
 use modules::wallet::{handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase};
 
@@ -34,10 +36,15 @@ async fn main() -> anyhow::Result<()> {
     let wallet_use_case = WalletUseCase::new(wallet_repo);
     let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
 
+    let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
+    let invoice_use_case = InvoiceUseCase::new(invoice_repo);
+    let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
+
     let app = Router::new()
         .route("/health", get(health_handler))
         .merge(merchant_routes(merchant_state))
-        .merge(wallet_routes(wallet_state));
+        .merge(wallet_routes(wallet_state))
+        .merge(invoice_routes(invoice_state));
 
     let addr: SocketAddr = format!("{}:{}", cfg.app.host, cfg.app.port).parse()?;
 
