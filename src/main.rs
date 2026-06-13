@@ -12,9 +12,11 @@ use infrastructure::blockchain::rpc_client::SolanaRpcClient;
 use infrastructure::blockchain::transaction_watcher::TransactionWatcher;
 use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
+use infrastructure::payment_repository::PostgresPaymentRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
 use modules::invoice::{handlers::InvoiceState, routes::invoice_routes, use_cases::InvoiceUseCase};
 use modules::merchant::{handlers::MerchantState, routes::merchant_routes, use_cases::MerchantUseCase};
+use modules::payment::use_cases::PaymentUseCase;
 use modules::wallet::{handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase};
 
 #[tokio::main]
@@ -42,11 +44,15 @@ async fn main() -> anyhow::Result<()> {
     let invoice_use_case = InvoiceUseCase::new(invoice_repo.clone());
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
 
+    let payment_repo = Arc::new(PostgresPaymentRepository::new(db.clone()));
+    let payment_use_case = Arc::new(PaymentUseCase::new(payment_repo, invoice_repo.clone()));
+
     let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
     let watcher = TransactionWatcher::new(
         rpc,
         invoice_repo.clone(),
         wallet_repo.clone(),
+        payment_use_case,
         cfg.solana_usdc_mint.clone(),
     );
 
@@ -63,7 +69,6 @@ async fn main() -> anyhow::Result<()> {
         .merge(invoice_routes(invoice_state));
 
     let addr: SocketAddr = format!("{}:{}", cfg.app_host, cfg.app_port).parse()?;
-
     info!(%addr, "Server listening");
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

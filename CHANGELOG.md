@@ -136,3 +136,13 @@ before release.
 * Solana devnet configuration
 * SOLANA_RPC_URL and SOLANA_USDC_MINT env vars
 
+## [0.6.0] - Payment Processing - 2026-06-14
+
+### Added
+* Payment domain entity with PaymentStatus (Detected, Confirmed, Failed)
+* PaymentRepository trait
+* PostgresPaymentRepository (SQLx implementation)
+* PaymentUseCase with duplicate signature check, invoice matching, amount validation
+* payments table migration with payment_status enum
+* TransactionWatcher wired to PaymentUseCase — invoices auto-close on payment detection
+

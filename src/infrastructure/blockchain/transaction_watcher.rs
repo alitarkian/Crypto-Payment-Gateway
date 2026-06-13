@@ -1,16 +1,18 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use tokio::time::{ interval, Duration };
-use tracing::{ error, info, warn };
+use tokio::time::{interval, Duration};
+use tracing::{error, info, warn};
 
 use crate::infrastructure::blockchain::rpc_client::SolanaRpcClient;
 use crate::modules::invoice::repository::InvoiceRepository;
+use crate::modules::payment::use_cases::{PaymentUseCase, ProcessPayment};
 use crate::modules::wallet::repository::WalletRepository;
 
 pub struct TransactionWatcher {
     rpc: SolanaRpcClient,
     invoice_repo: Arc<dyn InvoiceRepository>,
     wallet_repo: Arc<dyn WalletRepository>,
+    payment_use_case: Arc<PaymentUseCase>,
     usdc_mint: String,
 }
 
@@ -19,9 +21,10 @@ impl TransactionWatcher {
         rpc: SolanaRpcClient,
         invoice_repo: Arc<dyn InvoiceRepository>,
         wallet_repo: Arc<dyn WalletRepository>,
-        usdc_mint: String
+        payment_use_case: Arc<PaymentUseCase>,
+        usdc_mint: String,
     ) -> Self {
-        Self { rpc, invoice_repo, wallet_repo, usdc_mint }
+        Self { rpc, invoice_repo, wallet_repo, payment_use_case, usdc_mint }
     }
 
     pub async fn run(self) {
@@ -65,9 +68,7 @@ impl TransactionWatcher {
 
                 let tx = match self.rpc.get_transaction(&sig.signature).await {
                     Ok(Some(tx)) => tx,
-                    _ => {
-                        continue;
-                    }
+                    _ => continue,
                 };
 
                 if let Some(meta) = &tx.meta {
@@ -75,18 +76,42 @@ impl TransactionWatcher {
                         continue;
                     }
 
-                    if
-                        let Some(amount) = self.extract_usdc_received(
-                            &meta.pre_token_balances,
-                            &meta.post_token_balances
-                        )
-                    {
+                    if let Some(amount) = self.extract_usdc_received(
+                        &meta.pre_token_balances,
+                        &meta.post_token_balances,
+                    ) {
                         info!(
                             invoice_id = %invoice.id,
                             signature = %sig.signature,
                             amount = %amount,
-                            "Payment detected"
+                            "Payment detected — processing"
                         );
+
+                        let cmd = ProcessPayment {
+                            invoice_id: invoice.id,
+                            wallet_id: wallet.id,
+                            merchant_id: invoice.merchant_id,
+                            signature: sig.signature.clone(),
+                            amount,
+                        };
+
+                        match self.payment_use_case.process(cmd).await {
+                            Ok(payment) => {
+                                info!(
+                                    payment_id = %payment.id,
+                                    invoice_id = %invoice.id,
+                                    "Payment processed successfully"
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    error = %e,
+                                    invoice_id = %invoice.id,
+                                    signature = %sig.signature,
+                                    "Failed to process payment"
+                                );
+                            }
+                        }
                     }
                 }
             }
@@ -98,7 +123,7 @@ impl TransactionWatcher {
     fn extract_usdc_received(
         &self,
         pre: &Option<Vec<crate::infrastructure::blockchain::rpc_client::TokenBalance>>,
-        post: &Option<Vec<crate::infrastructure::blockchain::rpc_client::TokenBalance>>
+        post: &Option<Vec<crate::infrastructure::blockchain::rpc_client::TokenBalance>>,
     ) -> Option<rust_decimal::Decimal> {
         use rust_decimal::Decimal;
         use std::str::FromStr;
@@ -117,10 +142,13 @@ impl TransactionWatcher {
                 .and_then(|pre_balances| {
                     pre_balances
                         .iter()
-                        .find(
-                            |b| b.mint == self.usdc_mint && b.account_index == balance.account_index
-                        )
-                        .and_then(|b| Decimal::from_str(&b.ui_token_amount.ui_amount_string).ok())
+                        .find(|b| {
+                            b.mint == self.usdc_mint
+                                && b.account_index == balance.account_index
+                        })
+                        .and_then(|b| {
+                            Decimal::from_str(&b.ui_token_amount.ui_amount_string).ok()
+                        })
                 })
                 .unwrap_or(Decimal::ZERO);
 
