@@ -14,6 +14,7 @@ use infrastructure::blockchain::transaction_watcher::TransactionWatcher;
 use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
 use infrastructure::payment_repository::PostgresPaymentRepository;
+use infrastructure::settlement_repository::PostgresSettlementRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
 use infrastructure::webhook_repository::PostgresWebhookRepository;
 use modules::invoice::{ handlers::InvoiceState, routes::invoice_routes, use_cases::InvoiceUseCase };
@@ -23,6 +24,7 @@ use modules::merchant::{
     use_cases::MerchantUseCase,
 };
 use modules::payment::use_cases::PaymentUseCase;
+use modules::settlement::use_cases::SettlementUseCase;
 use modules::wallet::{ handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase };
 use modules::webhook::use_cases::WebhookUseCase;
 
@@ -40,28 +42,35 @@ async fn main() -> anyhow::Result<()> {
 
     let db = infrastructure::database::connect(&cfg.database_url).await?;
 
-    // ─── Repositories ────────────────────────────────────────────────────────
+    // ─── Repositories ─────────────────────────────────────────────────────────
     let merchant_repo = Arc::new(PostgresMerchantRepository::new(db.clone()));
     let wallet_repo = Arc::new(PostgresWalletRepository::new(db.clone()));
     let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
     let payment_repo = Arc::new(PostgresPaymentRepository::new(db.clone()));
     let webhook_repo = Arc::new(PostgresWebhookRepository::new(db.clone()));
+    let settlement_repo = Arc::new(PostgresSettlementRepository::new(db.clone()));
 
-    // ─── Use Cases ───────────────────────────────────────────────────────────
+    // ─── Use Cases ────────────────────────────────────────────────────────────
     let merchant_use_case = MerchantUseCase::new(merchant_repo);
     let wallet_use_case = WalletUseCase::new(wallet_repo.clone());
     let invoice_use_case = InvoiceUseCase::new(invoice_repo.clone());
     let webhook_use_case = Arc::new(WebhookUseCase::new(webhook_repo));
+    let settlement_use_case = Arc::new(SettlementUseCase::new(settlement_repo));
     let payment_use_case = Arc::new(
-        PaymentUseCase::new(payment_repo, invoice_repo.clone(), webhook_use_case.clone())
+        PaymentUseCase::new(
+            payment_repo,
+            invoice_repo.clone(),
+            webhook_use_case.clone(),
+            settlement_use_case.clone()
+        )
     );
 
-    // ─── HTTP States ─────────────────────────────────────────────────────────
+    // ─── HTTP States ──────────────────────────────────────────────────────────
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
     let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
 
-    // ─── Transaction Watcher ─────────────────────────────────────────────────
+    // ─── Transaction Watcher ──────────────────────────────────────────────────
     let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
     let watcher = TransactionWatcher::new(
         rpc,
@@ -71,13 +80,10 @@ async fn main() -> anyhow::Result<()> {
         cfg.solana_usdc_mint.clone()
     );
 
-    tokio::spawn(async move {
-        watcher.run().await;
-    });
-
+    tokio::spawn(async move { watcher.run().await });
     info!("Transaction watcher spawned");
 
-    // ─── Webhook Dispatcher (background worker) ───────────────────────────────
+    // ─── Webhook Dispatcher ───────────────────────────────────────────────────
     let webhook_dispatcher = webhook_use_case.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(15));
@@ -88,10 +94,24 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     });
-
     info!("Webhook dispatcher spawned");
 
-    // ─── HTTP Server ─────────────────────────────────────────────────────────
+    // ─── Settlement Processor ─────────────────────────────────────────────────
+    let settlement_processor = settlement_use_case.clone();
+    tokio::spawn(async move {
+        let mut tick = interval(Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            match settlement_processor.process_pending().await {
+                Ok(n) if n > 0 => info!(count = n, "Settlements processed"),
+                Ok(_) => {}
+                Err(e) => error!(error = %e, "Settlement processor error"),
+            }
+        }
+    });
+    info!("Settlement processor spawned");
+
+    // ─── HTTP Server ──────────────────────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(health_handler))
         .merge(merchant_routes(merchant_state))

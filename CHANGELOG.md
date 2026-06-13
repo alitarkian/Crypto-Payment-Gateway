@@ -159,3 +159,16 @@ before release.
 * Background webhook dispatcher worker (15s interval)
 * PaymentUseCase emits invoice.paid webhook event on success
 
+## [0.8.0] - Settlement Engine - 2026-06-14
+
+### Added
+* settlements table — per-payment financial record with fee calculation
+* settlement_batches table — daily merchant payout grouping
+* Settlement domain with state machine (pending → processing → ready_to_pay → paid | failed)
+* SettlementUseCase: create, process_pending, batch grouping by merchant
+* PostgresSettlementRepository
+* Platform fee: 1% (configurable via PLATFORM_FEE_RATE)
+* PaymentUseCase auto-creates settlement on payment success
+* Background settlement processor worker (60s interval)
+* Exponential batch processing — ready for Phase 9 on-chain payout
+

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use rust_decimal::Decimal;
-use tracing::{ info, warn };
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::domain::Payment;
@@ -8,8 +8,9 @@ use super::errors::PaymentError;
 use super::repository::PaymentRepository;
 use crate::modules::invoice::errors::InvoiceError;
 use crate::modules::invoice::repository::InvoiceRepository;
-use crate::modules::webhook::domain::{ WebhookEventType };
-use crate::modules::webhook::use_cases::{ CreateWebhookEvent, WebhookUseCase };
+use crate::modules::settlement::use_cases::{CreateSettlement, SettlementUseCase};
+use crate::modules::webhook::domain::WebhookEventType;
+use crate::modules::webhook::use_cases::{CreateWebhookEvent, WebhookUseCase};
 
 pub struct ProcessPayment {
     pub invoice_id: Uuid,
@@ -23,15 +24,17 @@ pub struct PaymentUseCase {
     payment_repo: Arc<dyn PaymentRepository>,
     invoice_repo: Arc<dyn InvoiceRepository>,
     webhook_use_case: Arc<WebhookUseCase>,
+    settlement_use_case: Arc<SettlementUseCase>,
 }
 
 impl PaymentUseCase {
     pub fn new(
         payment_repo: Arc<dyn PaymentRepository>,
         invoice_repo: Arc<dyn InvoiceRepository>,
-        webhook_use_case: Arc<WebhookUseCase>
+        webhook_use_case: Arc<WebhookUseCase>,
+        settlement_use_case: Arc<SettlementUseCase>,
     ) -> Self {
-        Self { payment_repo, invoice_repo, webhook_use_case }
+        Self { payment_repo, invoice_repo, webhook_use_case, settlement_use_case }
     }
 
     pub async fn process(&self, cmd: ProcessPayment) -> Result<Payment, PaymentError> {
@@ -40,12 +43,13 @@ impl PaymentUseCase {
             return Err(PaymentError::DuplicateSignature);
         }
 
-        let mut invoice = self.invoice_repo.find_by_id(cmd.invoice_id).await.map_err(|e| {
-            match e {
+        let mut invoice = self.invoice_repo
+            .find_by_id(cmd.invoice_id)
+            .await
+            .map_err(|e| match e {
                 InvoiceError::NotFound => PaymentError::InvoiceNotFound,
                 _ => PaymentError::DatabaseError(e.to_string()),
-            }
-        })?;
+            })?;
 
         if !invoice.is_payable() {
             return Err(PaymentError::InvoiceNotPayable);
@@ -63,14 +67,13 @@ impl PaymentUseCase {
             cmd.wallet_id,
             cmd.merchant_id,
             cmd.signature.clone(),
-            cmd.amount
+            cmd.amount,
         );
 
         self.payment_repo.save(&payment).await?;
 
         invoice.mark_paid().map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
-        self.invoice_repo
-            .update(&invoice).await
+        self.invoice_repo.update(&invoice).await
             .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
 
         info!(
@@ -81,22 +84,31 @@ impl PaymentUseCase {
             "Payment processed successfully"
         );
 
-        // Emit webhook event — non-blocking, failure doesn't affect payment
-        let webhook_payload =
-            serde_json::json!({
-            "payment_id": payment.id,
-            "invoice_id": payment.invoice_id,
-            "merchant_id": payment.merchant_id,
-            "signature": payment.signature,
-            "amount": payment.amount.to_string(),
-            "asset": payment.asset,
-            "blockchain": payment.blockchain,
-        });
+        // ─── Settlement — non-blocking ────────────────────────────────────────
+        let settlement_cmd = CreateSettlement {
+            merchant_id: cmd.merchant_id,
+            invoice_id: cmd.invoice_id,
+            payment_id: payment.id,
+            gross_amount: cmd.amount,
+        };
 
+        if let Err(e) = self.settlement_use_case.create(settlement_cmd).await {
+            warn!(error = %e, payment_id = %payment.id, "Failed to create settlement");
+        }
+
+        // ─── Webhook — non-blocking ───────────────────────────────────────────
         let webhook_cmd = CreateWebhookEvent {
             merchant_id: cmd.merchant_id,
             event_type: WebhookEventType::InvoicePaid,
-            payload: webhook_payload,
+            payload: serde_json::json!({
+                "payment_id": payment.id,
+                "invoice_id": payment.invoice_id,
+                "merchant_id": payment.merchant_id,
+                "signature": payment.signature,
+                "amount": payment.amount.to_string(),
+                "asset": payment.asset,
+                "blockchain": payment.blockchain,
+            }),
         };
 
         if let Err(e) = self.webhook_use_case.create_event(webhook_cmd).await {
