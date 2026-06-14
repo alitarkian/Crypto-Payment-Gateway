@@ -5,17 +5,17 @@ mod modules;
 mod observability;
 mod openapi;
 
-use modules::webhook::{ handlers::WebhookState, routes::webhook_routes };
-use openapi::openapi_router;
-
 use std::sync::Arc;
 use axum::{ middleware as axum_middleware, routing::get, Router };
 use std::net::SocketAddr;
 use tokio::time::{ interval, Duration };
 use tracing::{ error, info };
 
+use infrastructure::blockchain::adapters::solana::SolanaAdapter;
+use infrastructure::blockchain::adapters::ethereum::EthereumAdapter;
+use infrastructure::blockchain::ethereum_client::EthereumRpcClient;
+use infrastructure::blockchain::multi_chain_watcher::MultiChainWatcher;
 use infrastructure::blockchain::rpc_client::SolanaRpcClient;
-use infrastructure::blockchain::transaction_watcher::TransactionWatcher;
 use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
 use infrastructure::payment_repository::PostgresPaymentRepository;
@@ -36,8 +36,9 @@ use modules::merchant::{
 use modules::payment::use_cases::PaymentUseCase;
 use modules::settlement::use_cases::SettlementUseCase;
 use modules::wallet::{ handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase };
-use modules::webhook::use_cases::WebhookUseCase;
+use modules::webhook::{ handlers::WebhookState, routes::webhook_routes, use_cases::WebhookUseCase };
 use observability::metrics::{ init_metrics, metrics_router };
+use openapi::openapi_router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -100,18 +101,40 @@ async fn main() -> anyhow::Result<()> {
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
     let webhook_state = Arc::new(WebhookState { use_case: webhook_use_case.clone() });
 
-    // ─── Background Workers ───────────────────────────────────────────────────
-    let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
-    let watcher = TransactionWatcher::new(
-        rpc,
+    // ─── Multi-Chain Watcher ──────────────────────────────────────────────────
+    let solana_adapter = Arc::new(
+        SolanaAdapter::new(
+            SolanaRpcClient::new(cfg.solana_rpc_url.clone()),
+            cfg.solana_usdc_mint.clone()
+        )
+    );
+
+    let mut adapters: Vec<Arc<dyn infrastructure::blockchain::chain_adapter::ChainAdapter>> = vec![
+        solana_adapter
+    ];
+
+    if
+        let (Some(eth_url), Some(eth_usdc)) = (
+            cfg.ethereum_rpc_url.clone(),
+            cfg.ethereum_usdc_contract.clone(),
+        )
+    {
+        let eth_adapter = Arc::new(EthereumAdapter::new(EthereumRpcClient::new(eth_url), eth_usdc));
+        adapters.push(eth_adapter);
+        info!("Ethereum adapter enabled");
+    }
+
+    let multi_watcher = MultiChainWatcher::new(
+        adapters,
         invoice_repo.clone(),
         wallet_repo.clone(),
-        payment_use_case,
-        cfg.solana_usdc_mint.clone()
+        payment_use_case
     );
-    tokio::spawn(async move { watcher.run().await });
-    info!("Transaction watcher spawned");
 
+    tokio::spawn(async move { multi_watcher.run().await });
+    info!("MultiChainWatcher spawned");
+
+    // ─── Webhook Dispatcher ───────────────────────────────────────────────────
     let webhook_dispatcher = webhook_use_case.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(15));
@@ -124,6 +147,7 @@ async fn main() -> anyhow::Result<()> {
     });
     info!("Webhook dispatcher spawned");
 
+    // ─── Settlement Processor ─────────────────────────────────────────────────
     let settlement_processor = settlement_use_case.clone();
     tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(60));
@@ -153,7 +177,7 @@ async fn main() -> anyhow::Result<()> {
     });
     info!("Invoice expiry job spawned");
 
-    // ─── Protected API routes (require x-api-key) ─────────────────────────────
+    // ─── Protected Routes (require x-api-key) ─────────────────────────────────
     let protected = Router::new()
         .merge(wallet_routes(wallet_state))
         .merge(invoice_routes(invoice_state))

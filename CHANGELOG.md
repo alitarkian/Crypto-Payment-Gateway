@@ -217,4 +217,17 @@ before release.
   * create_invoice, get_invoice
   * register_webhook
 
-  
+  ## [0.12.0] - Multi-Chain - 2026-06-14
+
+### Added
+* ChainAdapter trait — blockchain abstraction layer
+* SolanaAdapter — refactored from TransactionWatcher
+* EthereumRpcClient — JSON-RPC client (eth_getLogs, eth_blockNumber)
+* EthereumAdapter — ERC-20 USDC transfer detection
+* MultiChainWatcher — parallel multi-chain payment detection
+* Ethereum support via ETHEREUM_RPC_URL + ETHEREUM_USDC_CONTRACT env vars
+* Polygon/Base compatible (same adapter, different RPC endpoint)
+
+### Removed
+* TransactionWatcher — replaced by MultiChainWatcher + SolanaAdapter
+

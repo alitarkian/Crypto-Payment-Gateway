@@ -14,6 +14,10 @@ pub struct AppConfig {
     pub otlp_endpoint: Option<String>,
     #[serde(default = "default_shutdown_timeout")]
     pub shutdown_timeout_secs: u64,
+    #[serde(default)]
+    pub ethereum_rpc_url: Option<String>,
+    #[serde(default)]
+    pub ethereum_usdc_contract: Option<String>,
 }
 
 fn default_shutdown_timeout() -> u64 {
