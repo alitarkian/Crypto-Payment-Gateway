@@ -203,3 +203,18 @@ before release.
 * Rate limiting infrastructure (global, per-IP ready for Phase 10)
 * Config: OTLP_ENDPOINT, SHUTDOWN_TIMEOUT_SECS
 
+## [0.11.0] - Public Launch - 2026-06-14
+
+### Added
+* Invoice expiry background job (60s interval, auto-expires pending invoices)
+* POST /api/v1/webhooks — merchant webhook registration
+* GET  /api/v1/merchants/{id}/webhooks — list merchant webhooks
+* GET  /docs — Swagger UI
+* GET  /api-docs/openapi.json — OpenAPI 3.0 spec
+* crypto-gateway-sdk — Rust SDK with GatewayClient
+  * create_merchant, get_merchant
+  * create_wallet, get_wallet
+  * create_invoice, get_invoice
+  * register_webhook
+
+  

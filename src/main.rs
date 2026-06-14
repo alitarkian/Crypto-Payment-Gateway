@@ -3,6 +3,10 @@ mod infrastructure;
 mod middleware;
 mod modules;
 mod observability;
+mod openapi;
+
+use modules::webhook::{ handlers::WebhookState, routes::webhook_routes };
+use openapi::openapi_router;
 
 use std::sync::Arc;
 use axum::{ middleware as axum_middleware, routing::get, Router };
@@ -94,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
     let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
+    let webhook_state = Arc::new(WebhookState { use_case: webhook_use_case.clone() });
 
     // ─── Background Workers ───────────────────────────────────────────────────
     let rpc = SolanaRpcClient::new(cfg.solana_rpc_url.clone());
@@ -133,6 +138,21 @@ async fn main() -> anyhow::Result<()> {
     });
     info!("Settlement processor spawned");
 
+    // ─── Invoice Expiry Job ───────────────────────────────────────────────────
+    let invoice_expiry = Arc::new(InvoiceUseCase::new(invoice_repo.clone()));
+    tokio::spawn(async move {
+        let mut tick = interval(Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            match invoice_expiry.expire_pending().await {
+                Ok(n) if n > 0 => info!(count = n, "Invoices expired"),
+                Ok(_) => {}
+                Err(e) => error!(error = %e, "Invoice expiry error"),
+            }
+        }
+    });
+    info!("Invoice expiry job spawned");
+
     // ─── Protected API routes (require x-api-key) ─────────────────────────────
     let protected = Router::new()
         .merge(wallet_routes(wallet_state))
@@ -146,8 +166,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_handler))
         .merge(merchant_routes(merchant_state))
         .merge(protected)
+        .merge(webhook_routes(webhook_state))
         .merge(admin_routes(admin_use_case))
         .merge(metrics_router())
+        .merge(openapi_router())
         .layer(axum_middleware::from_fn(request_id_middleware));
 
     // ─── Graceful Shutdown ────────────────────────────────────────────────────

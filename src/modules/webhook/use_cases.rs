@@ -177,6 +177,13 @@ impl WebhookUseCase {
         }
     }
 
+    pub async fn list_by_merchant(
+        &self,
+        merchant_id: Uuid
+    ) -> Result<Vec<super::domain::Webhook>, WebhookError> {
+        self.repo.find_webhooks_by_merchant(merchant_id).await
+    }
+
     fn sign(&self, secret: &str, payload: &str) -> String {
         use hmac::{ Hmac, Mac };
         use sha2::Sha256;

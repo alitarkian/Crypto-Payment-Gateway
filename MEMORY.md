@@ -233,3 +233,11 @@ Status: COMPLETE
 
 Next Phase:
 Phase 10 — Public Launch
+
+## Current Phase
+Phase 10 — Public Launch
+Status: COMPLETE
+
+Next Phase:
+Phase 11 — Multi-Chain
+

@@ -43,5 +43,8 @@ axum-prometheus = "0.7"
 
 governor = "0.6"
 
+utoipa = { version = "4", features = ["axum_extras", "chrono", "decimal", "uuid"] }
+utoipa-swagger-ui = { version = "7", features = ["axum"] }
+
 [dev-dependencies]
 tokio-test = "0.4"

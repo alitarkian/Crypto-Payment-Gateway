@@ -1,0 +1,15 @@
+[package]
+name = "crypto-gateway-sdk"
+version = "0.1.0"
+edition = "2024"
+description = "Rust SDK for Crypto Payment Gateway"
+license = "MIT"
+
+[dependencies]
+reqwest = { version = "0.13", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+rust_decimal = { version = "1", features = ["serde-with-str"] }
