@@ -4,5 +4,7 @@ pub mod invoice_repository;
 pub mod merchant_repository;
 pub mod payment_repository;
 pub mod settlement_repository;
+pub mod vault;
+pub mod wallet_key_repository;
 pub mod wallet_repository;
 pub mod webhook_repository;

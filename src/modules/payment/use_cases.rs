@@ -18,6 +18,8 @@ pub struct ProcessPayment {
     pub merchant_id: Uuid,
     pub signature: String,
     pub amount: Decimal,
+    pub blockchain: String,
+    pub asset: String,
 }
 
 pub struct PaymentUseCase {
@@ -66,10 +68,18 @@ impl PaymentUseCase {
             cmd.wallet_id,
             cmd.merchant_id,
             cmd.signature.clone(),
-            cmd.amount
+            cmd.amount,
+            cmd.blockchain.clone(),
+            cmd.asset.clone(),
         );
 
         self.payment_repo.save(&payment).await?;
+
+        // Confirm immediately after detection.
+        // TODO(phase-13): Replace with block-confirmation oracle (N confirmations).
+        let mut payment = payment;
+        payment.confirm();
+        self.payment_repo.update(&payment).await?;
 
         invoice.mark_paid().map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
         self.invoice_repo

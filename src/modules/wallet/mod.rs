@@ -1,6 +1,9 @@
 pub mod domain;
 pub mod errors;
+pub mod generate_use_case;
 pub mod handlers;
+pub mod key_domain;
+pub mod key_repository;
 pub mod repository;
 pub mod routes;
 pub mod use_cases;

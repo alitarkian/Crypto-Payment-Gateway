@@ -7,21 +7,28 @@ use crate::infrastructure::blockchain::{
     ethereum_client::EthereumRpcClient,
 };
 
-pub struct EthereumAdapter {
+/// BNB Smart Chain adapter.
+///
+/// BSC is EVM-compatible — we reuse EthereumRpcClient with a BSC RPC endpoint.
+/// Detects BEP-20 USDT (and optionally USDC) transfers to watched addresses.
+pub struct BscAdapter {
     rpc: EthereumRpcClient,
-    usdc_contract: String,
+    /// BEP-20 token contract address to monitor (e.g. USDT on BSC)
+    token_contract: String,
+    /// Asset symbol this contract represents (e.g. "USDT")
+    asset_symbol: String,
 }
 
-impl EthereumAdapter {
-    pub fn new(rpc: EthereumRpcClient, usdc_contract: String) -> Self {
-        Self { rpc, usdc_contract }
+impl BscAdapter {
+    pub fn new(rpc: EthereumRpcClient, token_contract: String, asset_symbol: String) -> Self {
+        Self { rpc, token_contract, asset_symbol }
     }
 }
 
 #[async_trait]
-impl ChainAdapter for EthereumAdapter {
+impl ChainAdapter for BscAdapter {
     fn chain_name(&self) -> &str {
-        "ethereum"
+        "bsc"
     }
 
     async fn detect_payments(
@@ -31,25 +38,25 @@ impl ChainAdapter for EthereumAdapter {
     ) -> anyhow::Result<Vec<DetectedPayment>> {
         let mut payments = Vec::new();
 
-        // آخر 100 block رو scan می‌کنیم
         let latest = match self.rpc.get_block_number().await {
             Ok(n) => n,
             Err(e) => {
-                warn!(error = %e, "Ethereum: failed to get block number");
+                warn!(error = %e, "BSC: failed to get block number");
                 return Ok(payments);
             }
         };
 
-        let from_block = format!("0x{:x}", latest.saturating_sub(100));
+        // BSC produces ~3s blocks — scan last 200 blocks (~10 minutes)
+        let from_block = format!("0x{:x}", latest.saturating_sub(200));
 
         let logs = match self
             .rpc
-            .get_usdc_transfers_to(wallet_address, &self.usdc_contract, &from_block)
+            .get_usdc_transfers_to(wallet_address, &self.token_contract, &from_block)
             .await
         {
             Ok(l) => l,
             Err(e) => {
-                warn!(error = %e, wallet = %wallet_address, "Ethereum: failed to fetch logs");
+                warn!(error = %e, wallet = %wallet_address, "BSC: failed to fetch token logs");
                 return Ok(payments);
             }
         };
@@ -69,8 +76,8 @@ impl ChainAdapter for EthereumAdapter {
                         signature: log.transaction_hash,
                         wallet_address: wallet_address.to_string(),
                         amount,
-                        blockchain: "ethereum".to_string(),
-                        asset: "USDC".to_string(),
+                        blockchain: "bsc".to_string(),
+                        asset: self.asset_symbol.clone(),
                     });
                 }
             }

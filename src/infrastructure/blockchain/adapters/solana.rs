@@ -107,6 +107,7 @@ impl ChainAdapter for SolanaAdapter {
                         wallet_address: wallet_address.to_string(),
                         amount,
                         blockchain: "solana".to_string(),
+                        asset: "USDC".to_string(),
                     });
                 }
             }

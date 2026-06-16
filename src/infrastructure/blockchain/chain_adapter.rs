@@ -4,11 +4,11 @@ use rust_decimal::Decimal;
 #[derive(Debug, Clone)]
 pub struct DetectedPayment {
     pub signature: String,
-    #[allow(dead_code)]
     pub wallet_address: String,
     pub amount: Decimal,
-    #[allow(dead_code)]
     pub blockchain: String,
+    /// The asset symbol detected (e.g. "USDC")
+    pub asset: String,
 }
 
 #[async_trait]

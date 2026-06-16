@@ -9,6 +9,8 @@ use super::repository::WalletRepository;
 pub struct CreateWallet {
     pub merchant_id: Uuid,
     pub address: String,
+    pub blockchain: super::domain::Blockchain,
+    pub asset: super::domain::Asset,
 }
 
 pub struct WalletUseCase {
@@ -25,7 +27,7 @@ impl WalletUseCase {
             return Err(WalletError::AddressAlreadyExists);
         }
 
-        let wallet = Wallet::new(cmd.merchant_id, cmd.address)?;
+        let wallet = Wallet::new(cmd.merchant_id, cmd.address, cmd.blockchain, cmd.asset)?;
 
         self.repo.save(&wallet).await?;
 

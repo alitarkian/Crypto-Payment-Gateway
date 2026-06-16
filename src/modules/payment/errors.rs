@@ -20,5 +20,7 @@ pub enum PaymentError {
         received: String,
     },
 
+    #[error("Invalid payment status in database: {0}")] InvalidStatus(String),
+
     #[error("Database error: {0}")] DatabaseError(String),
 }

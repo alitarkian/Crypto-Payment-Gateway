@@ -11,15 +11,20 @@ use std::net::SocketAddr;
 use tokio::time::{ interval, Duration };
 use tracing::{ error, info };
 
-use infrastructure::blockchain::adapters::solana::SolanaAdapter;
+use infrastructure::blockchain::adapters::bsc::BscAdapter;
 use infrastructure::blockchain::adapters::ethereum::EthereumAdapter;
+use infrastructure::blockchain::adapters::solana::SolanaAdapter;
+use infrastructure::blockchain::adapters::tron::TronAdapter;
 use infrastructure::blockchain::ethereum_client::EthereumRpcClient;
 use infrastructure::blockchain::multi_chain_watcher::MultiChainWatcher;
 use infrastructure::blockchain::rpc_client::SolanaRpcClient;
+use infrastructure::blockchain::tron_client::TronClient;
 use infrastructure::invoice_repository::PostgresInvoiceRepository;
 use infrastructure::merchant_repository::PostgresMerchantRepository;
 use infrastructure::payment_repository::PostgresPaymentRepository;
 use infrastructure::settlement_repository::PostgresSettlementRepository;
+use infrastructure::vault::key_vault::WalletVault;
+use infrastructure::wallet_key_repository::PostgresWalletKeyRepository;
 use infrastructure::wallet_repository::PostgresWalletRepository;
 use infrastructure::webhook_repository::PostgresWebhookRepository;
 use middleware::auth::AuthState;
@@ -35,7 +40,12 @@ use modules::merchant::{
 };
 use modules::payment::use_cases::PaymentUseCase;
 use modules::settlement::use_cases::SettlementUseCase;
-use modules::wallet::{ handlers::WalletState, routes::wallet_routes, use_cases::WalletUseCase };
+use modules::wallet::{
+    generate_use_case::GenerateWalletUseCase,
+    handlers::WalletState,
+    routes::wallet_routes,
+    use_cases::WalletUseCase,
+};
 use modules::webhook::{ handlers::WebhookState, routes::webhook_routes, use_cases::WebhookUseCase };
 use observability::metrics::{ init_metrics, metrics_router };
 use openapi::openapi_router;
@@ -54,9 +64,25 @@ async fn main() -> anyhow::Result<()> {
 
     let db = infrastructure::database::connect(&cfg.database_url).await?;
 
+    // ─── Vault ────────────────────────────────────────────────────────────────
+    let vault = Arc::new(WalletVault::from_env().unwrap_or_else(|e| {
+        // Warn and use a no-op placeholder in non-production environments.
+        // In production, WALLET_MASTER_KEY must be set — startup will fail cleanly.
+        tracing::warn!(error = %e, "WalletVault: WALLET_MASTER_KEY not set — managed wallet generation disabled");
+        // Panic in production to prevent starting without key management
+        if std::env::var("APP_ENV").as_deref() == Ok("production") {
+            panic!("WALLET_MASTER_KEY must be set in production");
+        }
+        // Dev fallback: 32 zero bytes (insecure — dev only)
+        // SAFETY: single-threaded startup, no other threads reading env yet
+        unsafe { std::env::set_var("WALLET_MASTER_KEY", "0".repeat(64)); }
+        WalletVault::from_env().expect("Dev fallback vault failed")
+    }));
+
     // ─── Repositories ─────────────────────────────────────────────────────────
     let merchant_repo = Arc::new(PostgresMerchantRepository::new(db.clone()));
     let wallet_repo = Arc::new(PostgresWalletRepository::new(db.clone()));
+    let wallet_key_repo = Arc::new(PostgresWalletKeyRepository::new(db.clone()));
     let invoice_repo = Arc::new(PostgresInvoiceRepository::new(db.clone()));
     let payment_repo = Arc::new(PostgresPaymentRepository::new(db.clone()));
     let webhook_repo = Arc::new(PostgresWebhookRepository::new(db.clone()));
@@ -65,6 +91,11 @@ async fn main() -> anyhow::Result<()> {
     // ─── Use Cases ────────────────────────────────────────────────────────────
     let merchant_use_case = MerchantUseCase::new(merchant_repo.clone());
     let wallet_use_case = WalletUseCase::new(wallet_repo.clone());
+    let generate_wallet_use_case = GenerateWalletUseCase::new(
+        wallet_repo.clone(),
+        wallet_key_repo.clone(),
+        vault.clone(),
+    );
     let invoice_use_case = InvoiceUseCase::new(invoice_repo.clone());
     let webhook_use_case = Arc::new(WebhookUseCase::new(webhook_repo.clone()));
     let settlement_use_case = Arc::new(SettlementUseCase::new(settlement_repo.clone()));
@@ -97,7 +128,10 @@ async fn main() -> anyhow::Result<()> {
 
     // ─── HTTP States ──────────────────────────────────────────────────────────
     let merchant_state = Arc::new(MerchantState { use_case: merchant_use_case });
-    let wallet_state = Arc::new(WalletState { use_case: wallet_use_case });
+    let wallet_state = Arc::new(WalletState {
+        use_case: wallet_use_case,
+        generate_use_case: generate_wallet_use_case,
+    });
     let invoice_state = Arc::new(InvoiceState { use_case: invoice_use_case });
     let webhook_state = Arc::new(WebhookState { use_case: webhook_use_case.clone() });
 
@@ -113,22 +147,49 @@ async fn main() -> anyhow::Result<()> {
         solana_adapter
     ];
 
-    if
-        let (Some(eth_url), Some(eth_usdc)) = (
-            cfg.ethereum_rpc_url.clone(),
-            cfg.ethereum_usdc_contract.clone(),
-        )
-    {
+    if let (Some(eth_url), Some(eth_usdc)) = (
+        cfg.ethereum_rpc_url.clone(),
+        cfg.ethereum_usdc_contract.clone(),
+    ) {
         let eth_adapter = Arc::new(EthereumAdapter::new(EthereumRpcClient::new(eth_url), eth_usdc));
         adapters.push(eth_adapter);
         info!("Ethereum adapter enabled");
+    }
+
+    if let (Some(bsc_url), Some(bsc_contract)) = (
+        cfg.bsc_rpc_url.clone(),
+        cfg.bsc_token_contract.clone(),
+    ) {
+        let symbol = cfg.bsc_token_symbol.clone().unwrap_or_else(|| "USDT".to_string());
+        let bsc_adapter = Arc::new(BscAdapter::new(
+            EthereumRpcClient::new(bsc_url),
+            bsc_contract,
+            symbol,
+        ));
+        adapters.push(bsc_adapter);
+        info!("BSC adapter enabled");
+    }
+
+    if let (Some(tron_url), Some(tron_contract)) = (
+        cfg.tron_rpc_url.clone(),
+        cfg.tron_token_contract.clone(),
+    ) {
+        let symbol = cfg.tron_token_symbol.clone().unwrap_or_else(|| "USDT".to_string());
+        let tron_adapter = Arc::new(TronAdapter::new(
+            TronClient::new(tron_url),
+            tron_contract,
+            symbol,
+        ));
+        adapters.push(tron_adapter);
+        info!("Tron adapter enabled");
     }
 
     let multi_watcher = MultiChainWatcher::new(
         adapters,
         invoice_repo.clone(),
         wallet_repo.clone(),
-        payment_use_case
+        payment_repo.clone(),
+        payment_use_case,
     );
 
     tokio::spawn(async move { multi_watcher.run().await });

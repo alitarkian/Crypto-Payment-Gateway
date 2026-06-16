@@ -38,8 +38,9 @@ struct PaymentRow {
 }
 
 impl PaymentRow {
-    fn into_domain(self) -> Payment {
-        Payment {
+    fn into_domain(self) -> Result<Payment, PaymentError> {
+        let status = PaymentStatus::try_from_str(&self.status)?;
+        Ok(Payment {
             id: self.id,
             invoice_id: self.invoice_id,
             wallet_id: self.wallet_id,
@@ -48,12 +49,12 @@ impl PaymentRow {
             amount: self.amount,
             asset: self.asset,
             blockchain: self.blockchain,
-            status: PaymentStatus::from_str(&self.status),
+            status,
             detected_at: self.detected_at,
             confirmed_at: self.confirmed_at,
             created_at: self.created_at,
             updated_at: self.updated_at,
-        }
+        })
     }
 }
 
@@ -93,6 +94,27 @@ impl PaymentRepository for PostgresPaymentRepository {
         Ok(())
     }
 
+    async fn update(&self, payment: &Payment) -> Result<(), PaymentError> {
+        sqlx::query(
+            r#"
+            UPDATE payments
+            SET status      = $2::text::payment_status,
+                confirmed_at = $3,
+                updated_at   = $4
+            WHERE id = $1
+            "#,
+        )
+        .bind(payment.id)
+        .bind(payment.status.as_str())
+        .bind(payment.confirmed_at)
+        .bind(payment.updated_at)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
+
+        Ok(())
+    }
+
     async fn find_by_id(&self, id: Uuid) -> Result<Payment, PaymentError> {
         sqlx::query_as::<_, PaymentRow>(
             r#"SELECT id, invoice_id, wallet_id, merchant_id, signature, amount, asset, blockchain,
@@ -103,12 +125,12 @@ impl PaymentRepository for PostgresPaymentRepository {
         .fetch_optional(&self.pool)
         .await
         .map_err(|e| PaymentError::DatabaseError(e.to_string()))?
-        .ok_or(PaymentError::NotFound)
-        .map(PaymentRow::into_domain)
+        .ok_or(PaymentError::NotFound)?
+        .into_domain()
     }
 
     async fn find_by_signature(&self, signature: &str) -> Result<Option<Payment>, PaymentError> {
-        sqlx::query_as::<_, PaymentRow>(
+        let row = sqlx::query_as::<_, PaymentRow>(
             r#"SELECT id, invoice_id, wallet_id, merchant_id, signature, amount, asset, blockchain,
                       status::TEXT as status, detected_at, confirmed_at, created_at, updated_at
                FROM payments WHERE signature = $1"#,
@@ -116,12 +138,13 @@ impl PaymentRepository for PostgresPaymentRepository {
         .bind(signature)
         .fetch_optional(&self.pool)
         .await
-        .map_err(|e| PaymentError::DatabaseError(e.to_string()))
-        .map(|opt| opt.map(PaymentRow::into_domain))
+        .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
+
+        row.map(PaymentRow::into_domain).transpose()
     }
 
     async fn find_by_invoice_id(&self, invoice_id: Uuid) -> Result<Vec<Payment>, PaymentError> {
-        sqlx::query_as::<_, PaymentRow>(
+        let rows = sqlx::query_as::<_, PaymentRow>(
             r#"SELECT id, invoice_id, wallet_id, merchant_id, signature, amount, asset, blockchain,
                       status::TEXT as status, detected_at, confirmed_at, created_at, updated_at
                FROM payments WHERE invoice_id = $1
@@ -130,7 +153,23 @@ impl PaymentRepository for PostgresPaymentRepository {
         .bind(invoice_id)
         .fetch_all(&self.pool)
         .await
-        .map_err(|e| PaymentError::DatabaseError(e.to_string()))
-        .map(|rows| rows.into_iter().map(PaymentRow::into_domain).collect())
+        .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
+
+        rows.into_iter().map(PaymentRow::into_domain).collect()
+    }
+
+    async fn find_signatures_by_blockchain(
+        &self,
+        blockchain: &str,
+    ) -> Result<Vec<String>, PaymentError> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            r#"SELECT signature FROM payments WHERE blockchain = $1"#,
+        )
+        .bind(blockchain)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|e| PaymentError::DatabaseError(e.to_string()))?;
+
+        Ok(rows.into_iter().map(|(s,)| s).collect())
     }
 }

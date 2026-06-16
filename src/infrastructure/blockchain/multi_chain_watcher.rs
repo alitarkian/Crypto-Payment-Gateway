@@ -6,6 +6,7 @@ use tracing::{ error, info, warn };
 
 use crate::infrastructure::blockchain::chain_adapter::ChainAdapter;
 use crate::modules::invoice::repository::InvoiceRepository;
+use crate::modules::payment::repository::PaymentRepository;
 use crate::modules::payment::use_cases::{ PaymentUseCase, ProcessPayment };
 use crate::modules::wallet::repository::WalletRepository;
 
@@ -13,6 +14,7 @@ pub struct MultiChainWatcher {
     adapters: Vec<Arc<dyn ChainAdapter>>,
     invoice_repo: Arc<dyn InvoiceRepository>,
     wallet_repo: Arc<dyn WalletRepository>,
+    payment_repo: Arc<dyn PaymentRepository>,
     payment_use_case: Arc<PaymentUseCase>,
 }
 
@@ -21,26 +23,40 @@ impl MultiChainWatcher {
         adapters: Vec<Arc<dyn ChainAdapter>>,
         invoice_repo: Arc<dyn InvoiceRepository>,
         wallet_repo: Arc<dyn WalletRepository>,
-        payment_use_case: Arc<PaymentUseCase>
+        payment_repo: Arc<dyn PaymentRepository>,
+        payment_use_case: Arc<PaymentUseCase>,
     ) -> Self {
         Self {
             adapters,
             invoice_repo,
             wallet_repo,
+            payment_repo,
             payment_use_case,
         }
     }
 
     pub async fn run(self) {
-        info!(
-            chains = ?self.adapters.iter().map(|a| a.chain_name()).collect::<Vec<_>>(),
-            "MultiChainWatcher started"
-        );
+        let chain_names: Vec<&str> = self.adapters.iter().map(|a| a.chain_name()).collect();
+        info!(chains = ?chain_names, "MultiChainWatcher started");
+
+        // ── Seed seen_signatures from DB to avoid redundant RPC calls after restart ──
+        let mut seen: HashMap<String, HashSet<String>> = HashMap::new();
+        for adapter in &self.adapters {
+            let chain = adapter.chain_name().to_string();
+            match self.payment_repo.find_signatures_by_blockchain(&chain).await {
+                Ok(sigs) => {
+                    let count = sigs.len();
+                    seen.insert(chain.clone(), sigs.into_iter().collect());
+                    info!(chain = %chain, count, "Seeded seen_signatures from DB");
+                }
+                Err(e) => {
+                    error!(chain = %chain, error = %e, "Failed to seed seen_signatures — starting empty");
+                    seen.insert(chain, HashSet::new());
+                }
+            }
+        }
 
         let mut tick = interval(Duration::from_secs(10));
-        // per-chain seen signatures
-        let mut seen: HashMap<String, HashSet<String>> = HashMap::new();
-
         loop {
             tick.tick().await;
             if let Err(e) = self.watch_cycle(&mut seen).await {
@@ -97,6 +113,8 @@ impl MultiChainWatcher {
                         merchant_id: invoice.merchant_id,
                         signature: payment.signature.clone(),
                         amount: payment.amount,
+                        blockchain: payment.blockchain.clone(),
+                        asset: payment.asset.clone(),
                     };
 
                     match self.payment_use_case.process(cmd).await {

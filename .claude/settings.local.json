@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"\\\\\\\\wsl.localhost\\\\ubuntu\\\\home\\\\ali\\\\projects\\\\Crypto-Payment-Gateway\")",
+      "Read(///wsl.localhost/ubuntu/wsl.localhost/ubuntu/home/ali/projects/**)",
+      "Bash(wsl.exe -- bash -lc \"cd /home/ali/projects/Crypto-Payment-Gateway && cargo check --quiet 2>&1 | tail -100\")"
+    ]
+  }
+}

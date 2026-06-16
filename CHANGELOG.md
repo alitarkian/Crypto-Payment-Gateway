@@ -21,6 +21,19 @@ Semantic Versioning
 
 ---
 
+## [0.14.1] - Compilation Fixes (Rust 2024 + Dependency Compat) - 2026-06-16
+
+### Fixed
+
+* **`secp256k1` feature name** — renamed `bitcoin_hashes` → `hashes` (correct feature in v0.29)
+* **`aes-gcm` nonce API** — replaced deprecated `Nonce::from_slice` with `Aes256Gcm::generate_nonce(&mut OsRng)` in encrypt; `Nonce::from([u8; 12])` in decrypt
+* **`zeroize` trait not in scope** — added `use zeroize::Zeroize` import and `AeadCore` to aes-gcm imports
+* **`set_var` unsafe** — wrapped `std::env::set_var` calls in `unsafe {}` blocks (required in Rust 2024 edition)
+* **`reqwest 0.13` `.query()` unavailable** — replaced `.query(&params)` with inline URL query string in `TronClient::get_trc20_transfers_to()`
+* **Temporary borrow in array** — removed `&min_timestamp_ms.to_string()` temporary reference inside array literal
+
+---
+
 ## [0.1.0] - Foundation - 2026-06-13
 
 ### Added
@@ -216,6 +229,65 @@ before release.
   * create_wallet, get_wallet
   * create_invoice, get_invoice
   * register_webhook
+
+## [0.14.0] - Managed Wallet Generation (Custodial) - 2026-06-16
+
+### Added
+* `wallet_keys` table — AES-256-GCM encrypted private keys with per-row nonce and key_version
+* `WalletVault` service — AES-256-GCM encrypt/decrypt, master key from `WALLET_MASTER_KEY` env, zeroize on use
+* `WalletKey` domain entity — never exposed via API or logs
+* `WalletKeyRepository` trait + `PostgresWalletKeyRepository` implementation
+* `GenerateWalletUseCase` — creates keypair per chain, encrypts key, persists wallet + key atomically
+  * Solana: ed25519-dalek keypair → Base58 address
+  * EVM (Ethereum/Polygon/Base/BSC): secp256k1 → keccak256 → 0x address
+  * Tron: secp256k1 → keccak256 → Base58Check with 0x41 prefix
+  * Bitcoin: secp256k1 → SHA256 → RIPEMD160 → P2PKH Base58Check
+* `POST /api/v1/wallets/generate` endpoint — returns wallet address, never private key
+* New dependencies: `aes-gcm`, `zeroize`, `ed25519-dalek`, `secp256k1`, `bs58`, `sha3`, `ripemd`
+
+### Security
+* Private key is zeroized from memory immediately after encryption
+* `WALLET_MASTER_KEY` required at startup in production (panic guard)
+* Dev fallback (32 zero bytes) only active when `APP_ENV != production`
+
+---
+
+## [0.13.0] - Multi-Network Expansion - 2026-06-16
+
+### Added
+* `Blockchain::Bitcoin` and `Asset::Btc` domain variants
+* Bitcoin address validation: P2PKH (`1...`), P2SH (`3...`), Bech32/Taproot (`bc1...`)
+* `BscAdapter` — BEP-20 token monitoring via EVM-compatible RPC (reuses `EthereumRpcClient`)
+* `TronAdapter` — TRC-20 USDT monitoring via TronGrid REST API (`/v1/accounts/{addr}/transactions/trc20`)
+* `TronClient` — HTTP client for TronGrid with 10-minute lookback window
+* Config: `BSC_RPC_URL`, `BSC_TOKEN_CONTRACT`, `BSC_TOKEN_SYMBOL`, `TRON_RPC_URL`, `TRON_TOKEN_CONTRACT`, `TRON_TOKEN_SYMBOL`
+* `Wallet::new()` now accepts explicit `blockchain` and `asset` parameters (removed Solana/USDC hardcode)
+* `Wallet::from_generated()` constructor for keypair-derived wallets (skips address validation)
+* `POST /api/v1/wallets` now requires `blockchain` and `asset` fields in request body
+* `WalletError::UnsupportedBlockchain` and `WalletError::UnsupportedAsset` variants
+
+---
+
+## [0.12.1] - Technical Debt Sprint - 2026-06-16
+
+### Fixed
+
+* `PaymentStatus::from_str` — replaced silent fallback default with `try_from_str` returning `Result<PaymentStatus, PaymentError::InvalidStatus>`. DB corruption now surfaces as an error instead of masking as `Detected`.
+* `Payment::new()` — removed hardcoded `blockchain: "solana"` and `asset: "USDC"`. Both fields are now explicit parameters passed from `ProcessPayment` command and sourced from `DetectedPayment`.
+* `Payment::confirm()` — restored commented-out method. `PaymentRepository` trait gains `update()`. `PaymentUseCase::process()` now transitions payments to `Confirmed` immediately after detection (TODO: replace with block-confirmation oracle in Phase 13).
+* `MultiChainWatcher` — `seen_signatures` now seeded from DB on startup via `find_signatures_by_blockchain()`. Prevents redundant RPC calls after service restart. Financial safety was already guaranteed by DB duplicate-signature check; this fix eliminates unnecessary blockchain RPC load.
+* API key generation — replaced UUID concatenation with `rand::rngs::OsRng` + 256-bit entropy. New format: `cgpk_<64-char hex>` (69 chars total).
+
+### Added
+
+* `PaymentError::InvalidStatus(String)` variant
+* `PaymentRepository::update()` — persists status + confirmed_at changes
+* `PaymentRepository::find_signatures_by_blockchain()` — used for watcher startup seeding
+* `DetectedPayment::asset` field on `ChainAdapter` trait
+* `rand = "0.8"` dependency
+* Unit tests: 10 tests in `payment/domain.rs`, 8 tests in `merchant/domain.rs`
+
+---
 
   ## [0.12.0] - Multi-Chain - 2026-06-14
 

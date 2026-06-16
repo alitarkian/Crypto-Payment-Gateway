@@ -19,6 +19,18 @@ pub enum WalletError {
     #[error("Wallet is inactive")]
     InactiveWallet,
 
+    #[error("Unsupported blockchain: {0}")]
+    UnsupportedBlockchain(String),
+
+    #[error("Unsupported asset: {0}")]
+    UnsupportedAsset(String),
+
+    #[error("Key generation failed: {0}")]
+    KeyGenerationFailed(String),
+
+    #[error("Encryption error: {0}")]
+    EncryptionError(String),
+
     #[error("Database error: {0}")]
     DatabaseError(String),
 }
