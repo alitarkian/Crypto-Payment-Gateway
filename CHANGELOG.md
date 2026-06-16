@@ -21,6 +21,21 @@ Semantic Versioning
 
 ---
 
+## [0.15.0] - Docker Deployment - 2026-06-16
+
+### Added
+
+* `Dockerfile` — multi-stage Rust build (builder: rust:1.87-slim, runtime: debian:bookworm-slim)
+* `SQLX_OFFLINE=true` build mode — compile without live DB using `.sqlx/` query cache
+* `.dockerignore` — excludes `target/`, `.git/`, local env files
+* `.env.docker` — Docker-specific env vars (service hostnames instead of localhost)
+* `docker-compose.yml` — updated with `gateway` app service + healthchecks + `depends_on`
+* Named Docker network `crypto_gateway_net` — other projects attach to call the gateway
+* Non-root `gateway` user inside container for security
+* Aligned credentials: PostgreSQL and RabbitMQ now use `erpos:erpos` in Docker (matching `.env`)
+
+---
+
 ## [0.14.1] - Compilation Fixes (Rust 2024 + Dependency Compat) - 2026-06-16
 
 ### Fixed

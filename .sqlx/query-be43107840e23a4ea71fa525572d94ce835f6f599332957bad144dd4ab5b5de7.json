@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, merchant_id, address, blockchain, asset, balance, is_active, created_at, updated_at\n               FROM wallets WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "id"
+          }
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "merchant_id",
+        "type_info": "Uuid",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "merchant_id"
+          }
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "address",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "address"
+          }
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "blockchain",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "blockchain"
+          }
+        }
+      },
+      {
+        "ordinal": 4,
+        "name": "asset",
+        "type_info": "Varchar",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "asset"
+          }
+        }
+      },
+      {
+        "ordinal": 5,
+        "name": "balance",
+        "type_info": "Numeric",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "balance"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
+        "name": "is_active",
+        "type_info": "Bool",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "is_active"
+          }
+        }
+      },
+      {
+        "ordinal": 7,
+        "name": "created_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "created_at"
+          }
+        }
+      },
+      {
+        "ordinal": 8,
+        "name": "updated_at",
+        "type_info": "Timestamptz",
+        "origin": {
+          "Table": {
+            "table": "wallets",
+            "name": "updated_at"
+          }
+        }
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "be43107840e23a4ea71fa525572d94ce835f6f599332957bad144dd4ab5b5de7"
+}

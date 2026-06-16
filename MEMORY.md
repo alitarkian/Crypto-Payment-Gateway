@@ -212,6 +212,7 @@ Not part of MVP.
 | 12 | Multi-Network Expansion (BSC/Tron/Bitcoin) | 0.13.0 | ✅ COMPLETE |
 | 13 | Managed Wallet Generation (Custodial) | 0.14.0 | ✅ COMPLETE |
 | — | Compilation Fixes (Rust 2024 + Deps) | 0.14.1 | ✅ COMPLETE |
+| — | Docker Deployment | 0.15.0 | ✅ COMPLETE |
 
 ---
 
@@ -293,6 +294,28 @@ Two types of wallets exist:
 | Tron | TronAdapter | `TRON_RPC_URL`, `TRON_TOKEN_CONTRACT`, `TRON_TOKEN_SYMBOL` |
 
 All adapters are optional — only enabled when env vars are set.
+
+### Docker Setup
+- Named network: `crypto_gateway_net` (defined in docker-compose, other projects join as external)
+- App container name: `crypto_gateway`, port `8080`
+- Build requires `.sqlx/` cache — run `cargo sqlx prepare` before `docker build`
+- Env file: `.env.docker` (uses service names as hostnames, NOT localhost)
+- Migrations run automatically at startup via `sqlx::migrate!` embedded in binary
+- Credentials inside Docker: `erpos:erpos` for both PostgreSQL and RabbitMQ
+
+### How another project connects
+```yaml
+# in other project's docker-compose.yml:
+networks:
+  crypto_gateway_net:
+    external: true
+
+services:
+  my_service:
+    networks:
+      - crypto_gateway_net
+    # call gateway at: http://crypto_gateway:8080
+```
 
 ### Rust 2024 Edition Gotchas (confirmed fixes)
 - `std::env::set_var` is unsafe → wrap in `unsafe {}`
